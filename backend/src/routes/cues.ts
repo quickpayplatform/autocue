@@ -85,7 +85,19 @@ router.get("/:id", async (req, res) => {
     return;
   }
 
-  const cueRows = await query(
+  const cueRows = await query<{
+    id: string;
+    cue_number: number;
+    cue_list: number;
+    fade_time: number;
+    notes: string | null;
+    status: string;
+    submitted_by: string;
+    approved_by: string | null;
+    executed_at: string | null;
+    created_at: string;
+    updated_at: string;
+  }>(
     "SELECT id, cue_number, cue_list, fade_time, notes, status, submitted_by, approved_by, executed_at, created_at, updated_at FROM cues WHERE id = $1",
     [req.params.id]
   );

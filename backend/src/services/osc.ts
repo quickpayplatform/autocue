@@ -48,7 +48,8 @@ export class OscBridge {
   private sendCommand(command: OscCommand): Promise<void> {
     return new Promise((resolve, reject) => {
       const args = command.args ?? [];
-      this.client.send(command.address, ...args, (err: Error | null) => {
+      const message = new osc.Message(command.address, ...args);
+      this.client.send(message, (err: Error | null) => {
         if (err) {
           logger.error({ err, command }, "OSC command failed");
           reject(err);
