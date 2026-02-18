@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AutoCue — Theatre-Grade Cue Submission</title>
+    <meta
+      name="description"
+      content="AutoCue is a controlled remote lighting cue workflow for ETC Eos consoles with validation, operator approval, and audit logging."
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header class="site-header" id="top">
+      <div class="container header-inner">
+        <a class="brand" href="#top" aria-label="AutoCue home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">AutoCue</span>
+        </a>
+        <nav class="primary-nav" aria-label="Primary">
+          <a href="#how">How It Works</a>
+          <a href="#security">Security</a>
+          <a href="#venues">For Venues</a>
+          <a href="#designers">For Designers</a>
+          <a href="#faq">FAQ</a>
+          <a class="button" href="#demo">Request Demo</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-media">
+          <img src="assets/hero-stage.png" alt="Stage wash lighting in a dark theatre" />
+          <div class="hero-overlay" aria-hidden="true"></div>
+        </div>
+        <div class="container hero-content">
+          <p class="eyebrow">Theatre Cue Control</p>
+          <h1 id="hero-title">Lighting cues, submitted before call time.</h1>
+          <p class="hero-subtitle">
+            Designers submit remotely. Venues validate, approve, and safely record cues to Eos—fully logged.
+          </p>
+          <div class="cta-row">
+            <a class="button" href="#demo">Request Demo</a>
+            <a class="button button-ghost" href="#how">See Workflow</a>
+          </div>
+          <ul class="trust-list">
+            <li>Operator approval required</li>
+            <li>Console never on public internet</li>
+            <li>Full audit trail</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section split" id="venues" aria-labelledby="venues-title">
+        <div class="container split-grid">
+          <div class="split-card">
+            <h2 id="venues-title">Built for Venues</h2>
+            <ul>
+              <li>Fewer last-minute tech table surprises</li>
+              <li>Clear review + approval flow</li>
+              <li>Predictable handoffs for rentals/bookings</li>
+              <li>Safer network design for console isolation</li>
+            </ul>
+          </div>
+          <div class="split-card" id="designers">
+            <h2>Loved by Designers</h2>
+            <ul>
+              <li>Submit cue notes and levels ahead of arrival</li>
+              <li>Faster focus and spacing sessions</li>
+              <li>Less back-and-forth on paperwork</li>
+              <li>Confidence cues are reviewed</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="how" aria-labelledby="how-title">
+        <div class="container">
+          <h2 id="how-title">How It Works</h2>
+          <p class="section-lede">
+            AutoCue enables remote lighting cue submission for ETC Eos consoles through a controlled workflow:
+            Submission → Validation → Human Approval → OSC Execution → Logging.
+          </p>
+          <div class="stepper">
+            <article class="step">
+              <div class="step-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="presentation">
+                  <path d="M4 6h16M4 12h10M4 18h7" />
+                </svg>
+              </div>
+              <h3>Submit Cue</h3>
+              <p>Designers submit cue data and notes from anywhere.</p>
+            </article>
+            <article class="step">
+              <div class="step-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="presentation">
+                  <path d="M4 12l4 4 12-12" />
+                </svg>
+              </div>
+              <h3>Validation Engine</h3>
+              <p>Checks cue number &gt; 0, levels 0–100, fade time ≥ 0, and patch ranges.</p>
+            </article>
+            <article class="step">
+              <div class="step-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="presentation">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </div>
+              <h3>Operator Review</h3>
+              <p>Operators approve or reject, preventing duplicates and locked overwrites.</p>
+            </article>
+            <article class="step">
+              <div class="step-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="presentation">
+                  <path d="M4 7h16v10H4z" />
+                </svg>
+              </div>
+              <h3>OSC Execution</h3>
+              <p>Approved cues translate to OSC safely—console stays local.</p>
+            </article>
+            <article class="step">
+              <div class="step-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="presentation">
+                  <path d="M5 4h14v16H5z" />
+                </svg>
+              </div>
+              <h3>Logged Result</h3>
+              <p>Every state change and execution is recorded for audits.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="security" aria-labelledby="security-title">
+        <div class="container">
+          <h2 id="security-title">Safety by Design</h2>
+          <div class="grid">
+            <article class="card">JWT authentication</article>
+            <article class="card">Role-based access control</article>
+            <article class="card">Rate limiting</article>
+            <article class="card">IP allowlist for OSC bridge</article>
+            <article class="card">Full audit trail</article>
+            <article class="card">Manual console override</article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="network" aria-labelledby="network-title">
+        <div class="container">
+          <h2 id="network-title">Network Architecture</h2>
+          <p class="section-lede">
+            Cloud app → Secure VPN tunnel (Tailscale/WireGuard) → Venue local OSC bridge → ETC Eos console.
+          </p>
+          <div class="diagram" role="img" aria-label="Cloud app connects to secure VPN tunnel, then venue OSC bridge, then ETC Eos console">
+            <div class="node">Cloud App</div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="node">Secure VPN Tunnel</div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="node">Local OSC Bridge</div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="node">ETC Eos Console</div>
+          </div>
+          <p class="note">The console never touches the public internet.</p>
+        </div>
+      </section>
+
+      <section class="section" id="dashboard" aria-labelledby="dashboard-title">
+        <div class="container">
+          <h2 id="dashboard-title">Approval Dashboard</h2>
+          <div class="dashboard">
+            <div class="panel">
+              <h3>Pending Cues</h3>
+              <ul>
+                <li>Cue 12 — Fade 3.0s</li>
+                <li>Cue 18 — Fade 2.5s</li>
+                <li>Cue 21 — Fade 4.0s</li>
+              </ul>
+            </div>
+            <div class="panel">
+              <h3>Channel Preview</h3>
+              <div class="levels">
+                <span>Ch 1: 75</span>
+                <span>Ch 5: 40</span>
+                <span>Ch 12: 90</span>
+                <span>Ch 21: 65</span>
+              </div>
+              <div class="actions">
+                <button type="button" class="button">Approve</button>
+                <button type="button" class="button button-ghost">Reject</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="faq" aria-labelledby="faq-title">
+        <div class="container">
+          <h2 id="faq-title">FAQ</h2>
+          <div class="faq">
+            <details>
+              <summary>Do cues run automatically?</summary>
+              <p>No. Operator approval is required before any execution.</p>
+            </details>
+            <details>
+              <summary>Will this expose our console to the internet?</summary>
+              <p>No. AutoCue uses a secure VPN tunnel and a local OSC bridge.</p>
+            </details>
+            <details>
+              <summary>Can we test without the venue console?</summary>
+              <p>Yes. AutoCue supports ETC Nomad for offline testing.</p>
+            </details>
+            <details>
+              <summary>What consoles are supported?</summary>
+              <p>ETC Eos family consoles via OSC.</p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cta" id="demo" aria-labelledby="cta-title">
+        <div class="container cta-inner">
+          <div>
+            <h2 id="cta-title">Make cue handoffs effortless.</h2>
+            <p>Designed for rental houses, presenting venues, and touring artists.</p>
+          </div>
+          <a class="button" href="mailto:hello@autocue.app">Book a Demo</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div>
+          <span>© 2026 AutoCue</span>
+          <span class="footer-meta">Infrastructure for professional lighting teams.</span>
+        </div>
+        <div class="footer-links">
+          <a href="#how">How It Works</a>
+          <a href="#security">Security</a>
+          <a href="#faq">FAQ</a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: autocue-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: autocue
+      POSTGRES_USER: autocue
+      POSTGRES_PASSWORD: autocue
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/db-init.sql:/docker-entrypoint-initdb.d/db-init.sql:ro
+    ports:
+      - "5432:5432"
+
+  api:
+    build:
+      context: ./backend
+    container_name: autocue-api
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: postgres://autocue:autocue@db:5432/autocue
+      JWT_SECRET: change_me
+      JWT_ISSUER: autocue
+      JWT_AUDIENCE: autocue-users
+      OSC_IP: 127.0.0.1
+      OSC_PORT: 3032
+      OSC_RATE_MS: 100
+      OSC_RETRY_ATTEMPTS: 3
+      OSC_RETRY_DELAY_MS: 10000
+      OSC_IP_WHITELIST: 127.0.0.1
+      LOCKED_CUE_NUMBERS: ""
+      PATCH_RANGE_MIN: 1
+      PATCH_RANGE_MAX: 512
+      CUE_RATE_LIMIT_WINDOW_MS: 60000
+      CUE_RATE_LIMIT_MAX: 20
+      LOG_LEVEL: info
+    depends_on:
+      - db
+    ports:
+      - "4000:4000"
+
+volumes:
+  db-data:

@@ -1,0 +1,4 @@
+[build]
+  base = "."
+  command = "find . -name '._*' -delete && npm run build"
+  publish = "out"

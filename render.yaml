@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: autocue-api-new
+    runtime: node
+    rootDir: backend
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autocue-postgres
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ISSUER
+        value: autocue
+      - key: JWT_AUDIENCE
+        value: autocue-users
+      - key: OSC_IP
+        value: 127.0.0.1
+      - key: OSC_PORT
+        value: 3032
+      - key: OSC_RATE_MS
+        value: 100
+      - key: OSC_RETRY_ATTEMPTS
+        value: 3
+      - key: OSC_RETRY_DELAY_MS
+        value: 10000
+      - key: OSC_IP_WHITELIST
+        value: 127.0.0.1
+      - key: LOCKED_CUE_NUMBERS
+        value: ""
+      - key: PATCH_RANGE_MIN
+        value: 1
+      - key: PATCH_RANGE_MAX
+        value: 512
+      - key: CUE_RATE_LIMIT_WINDOW_MS
+        value: 60000
+      - key: CUE_RATE_LIMIT_MAX
+        value: 20
+      - key: LOG_LEVEL
+        value: info
+
+databases:
+  - name: autocue-postgres
+    plan: starter
