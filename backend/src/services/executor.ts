@@ -10,6 +10,7 @@ interface CueRow {
   cue_list: number;
   fade_time: number;
   notes: string | null;
+  venue_id: string;
 }
 
 interface ChannelRow {
@@ -26,7 +27,7 @@ export class CueExecutor {
 
   async executeCue(cueId: string, label?: string): Promise<boolean> {
     const cueRows = await query<CueRow>(
-      "SELECT id, cue_number, cue_list, fade_time, notes FROM cues WHERE id = $1",
+      "SELECT id, cue_number, cue_list, fade_time, notes, venue_id FROM cues WHERE id = $1",
       [cueId]
     );
     const cue = cueRows[0];
@@ -58,7 +59,12 @@ export class CueExecutor {
       commands.push({ address: `/eos/cue/${cue.cue_number}/label`, args: [resolvedLabel] });
     }
 
-    await logAudit(cueId, "EXECUTE_ATTEMPT", `Attempting execution with ${commands.length} OSC commands`);
+    await logAudit(
+      cueId,
+      cue.venue_id,
+      "EXECUTE_ATTEMPT",
+      `Attempting execution with ${commands.length} OSC commands`
+    );
 
     try {
       await this.bridge.send(commands);
@@ -66,18 +72,18 @@ export class CueExecutor {
         "UPDATE cues SET status = 'EXECUTED', executed_at = now(), updated_at = now() WHERE id = $1",
         [cueId]
       );
-      await logAudit(cueId, "EXECUTED", "Cue executed successfully");
+      await logAudit(cueId, cue.venue_id, "EXECUTED", "Cue executed successfully");
       return true;
     } catch (error) {
       if (error instanceof OscSendError && error.sentCount > 0) {
         logger.error({ error, cueId }, "Partial OSC execution detected");
         await query("UPDATE cues SET status = 'FAILED', updated_at = now() WHERE id = $1", [cueId]);
-        await logAudit(cueId, "FAILED", "Partial OSC execution detected; no retry");
+        await logAudit(cueId, cue.venue_id, "FAILED", "Partial OSC execution detected; no retry");
         return true;
       }
 
       logger.error({ error, cueId }, "OSC execution failed");
-      await logAudit(cueId, "EXECUTION_ERROR", "OSC execution failed; will retry if attempts remain");
+      await logAudit(cueId, cue.venue_id, "EXECUTION_ERROR", "OSC execution failed; will retry if attempts remain");
       return false;
     }
   }
@@ -91,14 +97,14 @@ export class CueExecutor {
 
     if (attemptCount >= config.oscRetryAttempts) {
       await query("UPDATE cues SET status = 'FAILED', updated_at = now() WHERE id = $1", [cueId]);
-      await logAudit(cueId, "FAILED", "Execution attempts exhausted");
+      await logAudit(cueId, null, "FAILED", "Execution attempts exhausted");
       return;
     }
 
     const success = await this.executeCue(cueId, label);
     if (!success && attemptCount + 1 >= config.oscRetryAttempts) {
       await query("UPDATE cues SET status = 'FAILED', updated_at = now() WHERE id = $1", [cueId]);
-      await logAudit(cueId, "FAILED", "Execution attempts exhausted");
+      await logAudit(cueId, null, "FAILED", "Execution attempts exhausted");
     }
   }
 

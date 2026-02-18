@@ -6,6 +6,7 @@ import { logger } from "./logger.js";
 import { query } from "./db.js";
 import authRoutes from "./routes/auth.js";
 import cueRoutes from "./routes/cues.js";
+import venueRoutes from "./routes/venues.js";
 import { requireAuth } from "./middleware/auth.js";
 
 export function createApp() {
@@ -32,6 +33,7 @@ export function createApp() {
   });
 
   app.use("/auth", authRoutes);
+  app.use("/venues", requireAuth, venueRoutes);
   app.use("/cues", requireAuth, cueRoutes);
 
   app.use((_req, res) => {

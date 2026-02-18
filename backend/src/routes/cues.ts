@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { cueApprovalSchema, cueCreateSchema } from "../validation/cues.js";
+import { cueApprovalSchema, cueCreateSchema, cueUpdateSchema } from "../validation/cues.js";
 import { AuthedRequest } from "../middleware/auth.js";
 import { requireRole } from "../middleware/roles.js";
 import { cueSubmissionLimiter } from "../middleware/rateLimit.js";
@@ -14,6 +14,37 @@ const executor = new CueExecutor();
 
 const OPERATOR_ROLES: Role[] = ["OPERATOR", "ADMIN"];
 
+async function getVenueContext(userId: string, venueId: string) {
+  const rows = await query<{
+    venue_id: string;
+    venue_name: string;
+    patch_range_min: number;
+    patch_range_max: number;
+    locked_cue_numbers: number[];
+    role: "SUBMITTER" | "OPERATOR" | "ADMIN";
+  }>(
+    `SELECT v.id as venue_id, v.name as venue_name, v.patch_range_min, v.patch_range_max, v.locked_cue_numbers, vu.role
+     FROM venues v
+     JOIN venue_users vu ON vu.venue_id = v.id
+     WHERE v.id = $1 AND vu.user_id = $2`,
+    [venueId, userId]
+  );
+  return rows[0] ?? null;
+}
+
+async function getVenueSettings(venueId: string) {
+  const rows = await query<{
+    id: string;
+    patch_range_min: number;
+    patch_range_max: number;
+    locked_cue_numbers: number[];
+  }>(
+    "SELECT id, patch_range_min, patch_range_max, locked_cue_numbers FROM venues WHERE id = $1",
+    [venueId]
+  );
+  return rows[0] ?? null;
+}
+
 router.post("/", cueSubmissionLimiter, async (req: AuthedRequest, res) => {
   const parsed = cueCreateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -26,9 +57,25 @@ router.post("/", cueSubmissionLimiter, async (req: AuthedRequest, res) => {
     return;
   }
 
-  const { cueNumber, cueList, fadeTime, notes, channels } = parsed.data;
-  if (config.lockedCueNumbers.includes(cueNumber)) {
+  const { venueId, cueNumber, cueList, fadeTime, notes, channels } = parsed.data;
+  const venue = await getVenueContext(req.user.userId, venueId);
+  if (!venue) {
+    res.status(403).json({ error: "Not a member of this venue" });
+    return;
+  }
+
+  if (venue.locked_cue_numbers.includes(cueNumber) || config.lockedCueNumbers.includes(cueNumber)) {
     res.status(403).json({ error: "Cue number is locked" });
+    return;
+  }
+
+  const invalidChannel = channels.find(
+    (channel) =>
+      channel.channelNumber < venue.patch_range_min ||
+      channel.channelNumber > venue.patch_range_max
+  );
+  if (invalidChannel) {
+    res.status(400).json({ error: "Channel outside of venue patch range" });
     return;
   }
 
@@ -36,8 +83,8 @@ router.post("/", cueSubmissionLimiter, async (req: AuthedRequest, res) => {
   try {
     await client.query("BEGIN");
     const cueResult = await client.query<{ id: string }>(
-      "INSERT INTO cues (id, cue_number, cue_list, fade_time, notes, status, submitted_by, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'PENDING', $5, now(), now()) RETURNING id",
-      [cueNumber, cueList, fadeTime, notes, req.user.userId]
+      "INSERT INTO cues (id, cue_number, cue_list, fade_time, notes, status, venue_id, submitted_by, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'PENDING', $5, $6, now(), now()) RETURNING id",
+      [cueNumber, cueList, fadeTime, notes, venueId, req.user.userId]
     );
     const cueId = cueResult.rows[0].id;
 
@@ -49,7 +96,7 @@ router.post("/", cueSubmissionLimiter, async (req: AuthedRequest, res) => {
     }
 
     await client.query("COMMIT");
-    await logAudit(cueId, "SUBMITTED", `Cue submitted by ${req.user.userId}`);
+    await logAudit(cueId, venueId, "SUBMITTED", `Cue submitted by ${req.user.userId}`);
 
     res.status(201).json({ id: cueId });
   } catch (error) {
@@ -67,14 +114,22 @@ router.get("/", async (_req, res) => {
     return;
   }
 
-  const baseQuery =
-    "SELECT id, cue_number, cue_list, fade_time, notes, status, submitted_by, approved_by, executed_at, created_at, updated_at FROM cues";
-  const orderBy = " ORDER BY created_at DESC";
+  const venueId = req.query.venueId as string | undefined;
+  if (!venueId) {
+    res.status(400).json({ error: "venueId is required" });
+    return;
+  }
 
-  const cues =
-    req.user.role === "SUBMITTER"
-      ? await query(`${baseQuery} WHERE submitted_by = $1${orderBy}`, [req.user.userId])
-      : await query(`${baseQuery}${orderBy}`);
+  const venue = await getVenueContext(req.user.userId, venueId);
+  if (!venue && req.user.role !== "ADMIN") {
+    res.status(403).json({ error: "Not a member of this venue" });
+    return;
+  }
+
+  const cues = await query(
+    "SELECT id, cue_number, cue_list, fade_time, notes, status, submitted_by, approved_by, executed_at, created_at, updated_at FROM cues WHERE venue_id = $1 ORDER BY created_at DESC",
+    [venueId]
+  );
   res.json(cues);
 });
 
@@ -97,14 +152,21 @@ router.get("/:id", async (req, res) => {
     executed_at: string | null;
     created_at: string;
     updated_at: string;
+    venue_id: string;
   }>(
-    "SELECT id, cue_number, cue_list, fade_time, notes, status, submitted_by, approved_by, executed_at, created_at, updated_at FROM cues WHERE id = $1",
+    "SELECT id, cue_number, cue_list, fade_time, notes, status, submitted_by, approved_by, executed_at, created_at, updated_at, venue_id FROM cues WHERE id = $1",
     [req.params.id]
   );
 
   const cue = cueRows[0];
   if (!cue) {
     res.status(404).json({ error: "Cue not found" });
+    return;
+  }
+
+  const venue = await getVenueContext(authedReq.user.userId, cue.venue_id);
+  if (!venue && authedReq.user.role !== "ADMIN") {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
 
@@ -128,13 +190,19 @@ router.get("/:id/logs", async (req, res) => {
     return;
   }
 
-  const cueRows = await query<{ submitted_by: string }>(
-    "SELECT submitted_by FROM cues WHERE id = $1",
+  const cueRows = await query<{ submitted_by: string; venue_id: string }>(
+    "SELECT submitted_by, venue_id FROM cues WHERE id = $1",
     [req.params.id]
   );
   const cue = cueRows[0];
   if (!cue) {
     res.status(404).json({ error: "Cue not found" });
+    return;
+  }
+
+  const venue = await getVenueContext(authedReq.user.userId, cue.venue_id);
+  if (!venue && authedReq.user.role !== "ADMIN") {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
 
@@ -150,6 +218,102 @@ router.get("/:id/logs", async (req, res) => {
   res.json(logs);
 });
 
+router.patch("/:id", async (req: AuthedRequest, res) => {
+  const parsed = cueUpdateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const cueRows = await query<{
+    id: string;
+    status: string;
+    submitted_by: string;
+    venue_id: string;
+    cue_number: number;
+  }>("SELECT id, status, submitted_by, venue_id, cue_number FROM cues WHERE id = $1", [req.params.id]);
+
+  const cue = cueRows[0];
+  if (!cue) {
+    res.status(404).json({ error: "Cue not found" });
+    return;
+  }
+  if (cue.status !== "PENDING") {
+    res.status(409).json({ error: "Only pending cues can be edited" });
+    return;
+  }
+
+  const venue = await getVenueContext(req.user.userId, cue.venue_id);
+  const venueSettings = venue ?? (req.user.role === "ADMIN" ? await getVenueSettings(cue.venue_id) : null);
+  if (!venueSettings) {
+    res.status(403).json({ error: "Not a member of this venue" });
+    return;
+  }
+
+  if (req.user.role === "SUBMITTER" && cue.submitted_by !== req.user.userId) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const update = parsed.data;
+  if (update.cueNumber && venueSettings.locked_cue_numbers.includes(update.cueNumber)) {
+    res.status(403).json({ error: "Cue number is locked" });
+    return;
+  }
+
+  if (update.channels) {
+    const invalidChannel = update.channels.find(
+      (channel) =>
+        channel.channelNumber < venueSettings.patch_range_min ||
+        channel.channelNumber > venueSettings.patch_range_max
+    );
+    if (invalidChannel) {
+      res.status(400).json({ error: "Channel outside of venue patch range" });
+      return;
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    await client.query(
+      `UPDATE cues
+       SET cue_number = COALESCE($1, cue_number),
+           cue_list = COALESCE($2, cue_list),
+           fade_time = COALESCE($3, fade_time),
+           notes = COALESCE($4, notes),
+           updated_at = now()
+       WHERE id = $5`,
+      [update.cueNumber, update.cueList, update.fadeTime, update.notes, req.params.id]
+    );
+
+    if (update.channels) {
+      await client.query("DELETE FROM cue_channels WHERE cue_id = $1", [req.params.id]);
+      for (const channel of update.channels) {
+        await client.query(
+          "INSERT INTO cue_channels (id, cue_id, channel_number, level) VALUES (gen_random_uuid(), $1, $2, $3)",
+          [req.params.id, channel.channelNumber, channel.level]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    await logAudit(req.params.id, cue.venue_id, "UPDATED", `Cue updated by ${req.user.userId}`);
+    res.json({ status: "UPDATED" });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: "Failed to update cue" });
+  } finally {
+    client.release();
+  }
+});
+
 router.patch("/:id/approve", requireRole(OPERATOR_ROLES), async (req: AuthedRequest, res) => {
   const parsed = cueApprovalSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -162,8 +326,8 @@ router.patch("/:id/approve", requireRole(OPERATOR_ROLES), async (req: AuthedRequ
     return;
   }
 
-  const cueRows = await query<{ cue_number: number; cue_list: number; status: string }>(
-    "SELECT cue_number, cue_list, status FROM cues WHERE id = $1",
+  const cueRows = await query<{ cue_number: number; cue_list: number; status: string; venue_id: string }>(
+    "SELECT cue_number, cue_list, status, venue_id FROM cues WHERE id = $1",
     [req.params.id]
   );
   const cue = cueRows[0];
@@ -175,7 +339,16 @@ router.patch("/:id/approve", requireRole(OPERATOR_ROLES), async (req: AuthedRequ
     res.status(409).json({ error: "Cue is not pending" });
     return;
   }
-  if (config.lockedCueNumbers.includes(cue.cue_number)) {
+  const venue = await getVenueContext(req.user.userId, cue.venue_id);
+  if (!venue && req.user.role !== "ADMIN") {
+    res.status(403).json({ error: "Not a member of this venue" });
+    return;
+  }
+
+  if (
+    (venueSettings.locked_cue_numbers?.includes(cue.cue_number) ?? false) ||
+    config.lockedCueNumbers.includes(cue.cue_number)
+  ) {
     res.status(403).json({ error: "Cue number is locked" });
     return;
   }
@@ -194,7 +367,7 @@ router.patch("/:id/approve", requireRole(OPERATOR_ROLES), async (req: AuthedRequ
     [req.user.userId, req.params.id]
   );
 
-  await logAudit(req.params.id, "APPROVED", `Cue approved by ${req.user.userId}`);
+  await logAudit(req.params.id, cue.venue_id, "APPROVED", `Cue approved by ${req.user.userId}`);
 
   executor.handleApprovedCue(req.params.id, parsed.data.label).catch(() => undefined);
 
@@ -207,10 +380,15 @@ router.patch("/:id/reject", requireRole(OPERATOR_ROLES), async (req: AuthedReque
     return;
   }
 
-  const cueRows = await query<{ status: string }>(
-    "SELECT status FROM cues WHERE id = $1",
+  const cueRows = await query<{ status: string; venue_id: string }>(
+    "SELECT status, venue_id FROM cues WHERE id = $1",
     [req.params.id]
   );
+  const venue = await getVenueContext(req.user.userId, cue.venue_id);
+  if (!venue && req.user.role !== "ADMIN") {
+    res.status(403).json({ error: "Not a member of this venue" });
+    return;
+  }
   const cue = cueRows[0];
   if (!cue) {
     res.status(404).json({ error: "Cue not found" });
@@ -226,7 +404,7 @@ router.patch("/:id/reject", requireRole(OPERATOR_ROLES), async (req: AuthedReque
     [req.user.userId, req.params.id]
   );
 
-  await logAudit(req.params.id, "REJECTED", `Cue rejected by ${req.user.userId}`);
+  await logAudit(req.params.id, cue.venue_id, "REJECTED", `Cue rejected by ${req.user.userId}`);
 
   res.json({ status: "REJECTED" });
 });
