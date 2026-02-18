@@ -1,4 +1,4 @@
-import osc from "node-osc";
+import { Client, Message } from "node-osc";
 import { config } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -23,13 +23,13 @@ function delay(ms: number): Promise<void> {
 }
 
 export class OscBridge {
-  private client: osc.Client;
+  private client: Client;
 
   constructor() {
     if (config.oscIpWhitelist.length > 0 && !config.oscIpWhitelist.includes(config.oscIp)) {
       throw new Error("OSC_IP not in whitelist");
     }
-    this.client = new osc.Client(config.oscIp, config.oscPort);
+    this.client = new Client(config.oscIp, config.oscPort);
   }
 
   async send(commands: OscCommand[]): Promise<void> {
@@ -48,7 +48,7 @@ export class OscBridge {
   private sendCommand(command: OscCommand): Promise<void> {
     return new Promise((resolve, reject) => {
       const args = command.args ?? [];
-      const message = new osc.Message(command.address, ...args);
+      const message = new Message(command.address, ...args);
       this.client.send(message, (err: Error | null) => {
         if (err) {
           logger.error({ err, command }, "OSC command failed");
