@@ -2,7 +2,6 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import type { Logger } from "pino";
 import { logger } from "./logger.js";
 import { query } from "./db.js";
 import authRoutes from "./routes/auth.js";
@@ -15,7 +14,9 @@ export function createApp() {
   app.use(helmet());
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
-  app.use(pinoHttp({ logger: logger as Logger }));
+  app.use((pinoHttp as unknown as (options: { logger: unknown }) => express.RequestHandler)({
+    logger
+  }));
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
