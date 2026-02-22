@@ -187,6 +187,15 @@ export default function AutoQueSessionPage() {
 
     const tempoBpm = estimateTempo(energyCurve);
     const segments = segmentAudio(energyCurve);
+    segments
+      .filter((segment) => segment.type === "CHORUS" || segment.type === "VERSE")
+      .forEach((segment) => {
+        markers.push({
+          tMs: segment.startMs,
+          type: segment.type,
+          confidence: 0.6
+        });
+      });
 
     return { markers, energyCurve, tempoBpm, segments };
   }
@@ -260,23 +269,39 @@ export default function AutoQueSessionPage() {
   }
 
   function estimateTempo(energyCurve: Array<{ tMs: number; value: number }>) {
-    if (energyCurve.length < 4) return 120;
-    const peaks = energyCurve.filter((point) => point.value > 0.5).map((point) => point.tMs);
-    if (peaks.length < 2) return 120;
-    const intervals = peaks.slice(1).map((t, idx) => t - peaks[idx]);
-    const avgMs = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-    return Math.round(60000 / Math.max(1, avgMs));
+    if (energyCurve.length < 8) return 120;
+    const peaks = energyCurve.filter((point) => point.value > 0.45).map((point) => point.tMs);
+    if (peaks.length < 3) return 120;
+    const intervals = peaks.slice(1).map((t, idx) => t - peaks[idx]).filter((ms) => ms > 200);
+    intervals.sort((a, b) => a - b);
+    const median = intervals[Math.floor(intervals.length / 2)] ?? 500;
+    const bpm = 60000 / Math.max(250, Math.min(1500, median));
+    return Math.round(Math.min(200, Math.max(60, bpm)));
   }
 
   function segmentAudio(energyCurve: Array<{ tMs: number; value: number }>) {
+    if (energyCurve.length < 12) return [];
     const segments = [];
-    const window = 8;
-    for (let i = 0; i < energyCurve.length - window; i += window) {
-      const slice = energyCurve.slice(i, i + window);
+    const windowSize = 10;
+    const windowed = [];
+    for (let i = 0; i < energyCurve.length - windowSize; i += windowSize) {
+      const slice = energyCurve.slice(i, i + windowSize);
       const avg = slice.reduce((sum, p) => sum + p.value, 0) / slice.length;
-      const type = avg > 0.6 ? "CHORUS" : "VERSE";
-      segments.push({ startMs: slice[0].tMs, endMs: slice[slice.length - 1].tMs, type });
+      windowed.push({ startMs: slice[0].tMs, endMs: slice[slice.length - 1].tMs, avg });
     }
+
+    const avgEnergy = windowed.reduce((sum, w) => sum + w.avg, 0) / windowed.length;
+    const highThreshold = Math.min(0.75, avgEnergy + 0.15);
+    const lowThreshold = Math.max(0.2, avgEnergy - 0.15);
+
+    windowed.forEach((window, index) => {
+      let type = window.avg > highThreshold ? "CHORUS" : "VERSE";
+      if (index === 0 && window.avg < lowThreshold) type = "INTRO";
+      if (index === windowed.length - 1 && window.avg < lowThreshold) type = "OUTRO";
+      if (window.avg < lowThreshold && index > 1 && index < windowed.length - 2) type = "BRIDGE";
+      segments.push({ startMs: window.startMs, endMs: window.endMs, type });
+    });
+
     return segments;
   }
 
