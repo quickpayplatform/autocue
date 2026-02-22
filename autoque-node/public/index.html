@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AutoQue Node</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #0b0d10; color: #f2eee8; padding: 24px; }
+      section { margin-bottom: 24px; padding: 16px; border: 1px solid #2a2f39; }
+      input, select, button { margin-top: 8px; padding: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>AutoQue Node</h1>
+    <section>
+      <h2>Pairing</h2>
+      <p>Pairing code: <span id="pairing">loading...</span></p>
+      <button onclick="checkPair()">Check pairing</button>
+      <p id="pairStatus"></p>
+    </section>
+    <section>
+      <h2>Console Settings</h2>
+      <label>Console IP <input id="consoleIp" /></label><br />
+      <label>OSC Mode <select id="oscMode"><option value="tcp">TCP</option><option value="udp">UDP</option></select></label><br />
+      <label>OSC Port <input id="oscPort" type="number" /></label><br />
+      <label>UDP Local Port <input id="udpLocalPort" type="number" /></label><br />
+      <button onclick="saveConfig()">Save</button>
+    </section>
+    <section>
+      <h2>Test</h2>
+      <button onclick="sendTest()">Send Test OSC</button>
+    </section>
+    <script>
+      async function loadConfig() {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        document.getElementById('consoleIp').value = data.consoleIp;
+        document.getElementById('oscMode').value = data.oscMode;
+        document.getElementById('oscPort').value = data.oscPort;
+        document.getElementById('udpLocalPort').value = data.udpLocalPort;
+        document.getElementById('pairing').innerText = data.pairingCode || 'Check pairing in cloud';
+      }
+
+      async function saveConfig() {
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            consoleIp: document.getElementById('consoleIp').value,
+            oscMode: document.getElementById('oscMode').value,
+            oscPort: Number(document.getElementById('oscPort').value),
+            udpLocalPort: Number(document.getElementById('udpLocalPort').value)
+          })
+        });
+        alert('Saved');
+      }
+
+      async function checkPair() {
+        const res = await fetch('/api/pair/check', { method: 'POST' });
+        const data = await res.json();
+        document.getElementById('pairStatus').innerText = data.status;
+      }
+
+      async function sendTest() {
+        await fetch('/api/test', { method: 'POST' });
+        alert('Test sent');
+      }
+
+      loadConfig();
+    </script>
+  </body>
+</html>

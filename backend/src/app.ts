@@ -9,6 +9,7 @@ import cueRoutes from "./routes/cues.js";
 import venueRoutes from "./routes/venues.js";
 import rigRoutes from "./routes/rigs.js";
 import sessionRoutes from "./routes/sessions.js";
+import nodeRoutes from "./routes/nodes.js";
 import { requireAuth } from "./middleware/auth.js";
 
 export function createApp() {
@@ -36,6 +37,7 @@ export function createApp() {
 
   app.use("/auth", authRoutes);
   app.use("/venues", requireAuth, venueRoutes);
+  app.use("/api", nodeRoutes);
   app.use("/rigs", requireAuth, rigRoutes);
   app.use("/autoque", requireAuth, sessionRoutes);
   app.use("/cues", requireAuth, cueRoutes);

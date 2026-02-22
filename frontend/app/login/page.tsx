@@ -96,6 +96,9 @@ export default function HomePage() {
           <p>
             <a href="/client/session">Go to AutoQue session builder</a>
           </p>
+          <p>
+            <a href="/theatre/nodes">Go to AutoQue Node dashboard</a>
+          </p>
           {(role === "OPERATOR" || role === "ADMIN" || role === "THEATRE_ADMIN" || role === "THEATRE_TECH") && (
             <p>
               <a href="/operator">Go to operator dashboard</a>

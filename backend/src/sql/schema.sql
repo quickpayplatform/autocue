@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS venues (
   name TEXT NOT NULL,
   address TEXT,
   timezone TEXT NOT NULL DEFAULT 'UTC',
+  plan_status TEXT NOT NULL DEFAULT 'trial',
+  node_enabled BOOLEAN NOT NULL DEFAULT false,
   patch_range_min INTEGER NOT NULL DEFAULT 1,
   patch_range_max INTEGER NOT NULL DEFAULT 512,
   locked_cue_numbers INTEGER[] NOT NULL DEFAULT '{}',
@@ -212,6 +214,46 @@ CREATE TABLE IF NOT EXISTS session_shares (
   created_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS nodes (
+  id UUID PRIMARY KEY,
+  venue_id UUID NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+  display_name TEXT NOT NULL,
+  os TEXT NOT NULL,
+  version TEXT,
+  status TEXT NOT NULL DEFAULT 'offline',
+  last_seen_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS node_pairing_codes (
+  id UUID PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  venue_id UUID REFERENCES venues(id),
+  created_by_user_id UUID REFERENCES users(id),
+  node_id UUID REFERENCES nodes(id),
+  nonce TEXT NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  claimed_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS node_tokens (
+  node_id UUID PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  last_rotated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS node_logs (
+  id UUID PRIMARY KEY,
+  node_id UUID NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  level TEXT NOT NULL,
+  message TEXT NOT NULL,
+  meta JSONB,
+  created_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS cue_channels (
   id UUID PRIMARY KEY,
   cue_id UUID NOT NULL REFERENCES cues(id) ON DELETE CASCADE,
@@ -235,5 +277,8 @@ CREATE INDEX IF NOT EXISTS idx_rig_versions_theatre_id ON rig_versions(theatre_i
 CREATE INDEX IF NOT EXISTS idx_fixture_instances_rig_version_id ON fixture_instances(rig_version_id);
 CREATE INDEX IF NOT EXISTS idx_media_assets_theatre_id ON media_assets(theatre_id);
 CREATE INDEX IF NOT EXISTS idx_autoque_sessions_theatre_id ON autoque_sessions(theatre_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_venue_id ON nodes(venue_id);
+CREATE INDEX IF NOT EXISTS idx_node_pairing_codes_code ON node_pairing_codes(code);
+CREATE INDEX IF NOT EXISTS idx_node_logs_node_id ON node_logs(node_id);
 CREATE INDEX IF NOT EXISTS idx_cue_channels_cue_id ON cue_channels(cue_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_cue_id ON audit_logs(cue_id);

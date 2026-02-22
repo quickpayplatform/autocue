@@ -1,0 +1,25 @@
+{
+  "name": "autoque-node",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "build:mac": "echo 'TODO: build macOS pkg'",
+    "build:win": "echo 'TODO: build Windows MSI'"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-osc": "^6.0.0",
+    "osc-min": "^1.1.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3"
+  }
+}
