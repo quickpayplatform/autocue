@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
 interface Venue {
@@ -43,6 +43,13 @@ export default function AutoQueSessionPage() {
   const [rigDetail, setRigDetail] = useState<RigDetail | null>(null);
   const [rigMismatch, setRigMismatch] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<string | null>(null);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playheadMs, setPlayheadMs] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
     setToken(localStorage.getItem("autoque_token"));
@@ -147,6 +154,180 @@ export default function AutoQueSessionPage() {
     setRigMismatch(summary.rigMismatch);
   }
 
+  async function analyzeAudio(file: File) {
+    const arrayBuffer = await file.arrayBuffer();
+    const audioContext = new AudioContext();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+    const data = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    const windowSize = 1024;
+    const energyCurve = [];
+    const markers = [];
+
+    for (let i = 0; i < data.length; i += windowSize) {
+      let sum = 0;
+      for (let j = 0; j < windowSize && i + j < data.length; j += 1) {
+        const sample = data[i + j];
+        sum += sample * sample;
+      }
+      const rms = Math.sqrt(sum / windowSize);
+      const tMs = Math.floor((i / sampleRate) * 1000);
+      energyCurve.push({ tMs, value: Math.min(1, rms * 5) });
+    }
+
+    for (let i = 1; i < energyCurve.length - 1; i += 1) {
+      const prev = energyCurve[i - 1].value;
+      const curr = energyCurve[i].value;
+      const next = energyCurve[i + 1].value;
+      if (curr > prev && curr > next && curr > 0.4) {
+        markers.push({ tMs: energyCurve[i].tMs, type: "BEAT", confidence: Math.min(1, curr) });
+      }
+    }
+
+    return { markers, energyCurve };
+  }
+
+  async function analyzeVideoMotion(file: File) {
+    const videoUrl = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.src = videoUrl;
+    video.muted = true;
+    await new Promise<void>((resolve) => {
+      video.onloadedmetadata = () => resolve();
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 160;
+    canvas.height = 90;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("No canvas context");
+
+    const markers = [];
+    const energyCurve = [];
+    let lastFrame: Uint8ClampedArray | null = null;
+    const step = 0.5;
+
+    for (let t = 0; t < video.duration; t += step) {
+      video.currentTime = t;
+      await new Promise<void>((resolve) => {
+        video.onseeked = () => resolve();
+      });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const frame = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let diff = 0;
+      if (lastFrame) {
+        for (let i = 0; i < frame.length; i += 4) {
+          diff += Math.abs(frame[i] - lastFrame[i]);
+        }
+        diff /= frame.length;
+      }
+      lastFrame = new Uint8ClampedArray(frame);
+      const tMs = Math.floor(t * 1000);
+      const value = Math.min(1, diff / 25);
+      energyCurve.push({ tMs, value });
+    }
+
+    for (let i = 1; i < energyCurve.length - 1; i += 1) {
+      const prev = energyCurve[i - 1].value;
+      const curr = energyCurve[i].value;
+      const next = energyCurve[i + 1].value;
+      if (curr > prev && curr > next && curr > 0.3) {
+        markers.push({ tMs: energyCurve[i].tMs, type: "MOTION_PEAK", confidence: curr });
+      }
+    }
+
+    URL.revokeObjectURL(videoUrl);
+    return { markers, energyCurve };
+  }
+
+  async function runAnalysis() {
+    if (!token || !sessionId || !mediaFile) return;
+    setAnalysisStatus("Analyzing...");
+    const analysis = mediaFile.type.startsWith("video/")
+      ? await analyzeVideoMotion(mediaFile)
+      : await analyzeAudio(mediaFile);
+    await apiFetch(`/autoque/sessions/${sessionId}/analysis`, {
+      method: "PATCH",
+      body: JSON.stringify(analysis)
+    }, token);
+    setAnalysisStatus(`Analysis complete (${analysis.markers.length} markers)`);
+  }
+
+  function getActiveCue(timeMs: number) {
+    const sorted = [...cueEvents].sort((a, b) => a.t_ms - b.t_ms);
+    let active = sorted[0];
+    for (const cue of sorted) {
+      if (cue.t_ms <= timeMs) {
+        active = cue;
+      }
+    }
+    return active;
+  }
+
+  function drawPrevis() {
+    const canvas = canvasRef.current;
+    if (!canvas || !rigDetail?.stageBackgrounds?.[0]) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const bg = rigDetail.stageBackgrounds[0];
+    const image = new Image();
+    image.src = bg.image_url;
+    image.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      const activeCue = getActiveCue(playheadMs);
+      rigDetail.placements.forEach((placement) => {
+        const x = placement.stage_x * canvas.width;
+        const y = placement.stage_y * canvas.height;
+        ctx.fillStyle = "#d76b6b";
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (activeCue) {
+          ctx.fillStyle = "rgba(214, 164, 105, 0.3)";
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x - 30, y + 80);
+          ctx.lineTo(x + 30, y + 80);
+          ctx.closePath();
+          ctx.fill();
+        }
+      });
+
+      ctx.strokeStyle = "#1f9f9a";
+      ctx.beginPath();
+      const playheadX = (playheadMs / mediaDuration) * canvas.width;
+      ctx.moveTo(playheadX, 0);
+      ctx.lineTo(playheadX, canvas.height);
+      ctx.stroke();
+    };
+  }
+
+  useEffect(() => {
+    drawPrevis();
+  }, [rigDetail, playheadMs, cueEvents]);
+
+  function togglePlayback() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    } else {
+      audio.play();
+      setIsPlaying(true);
+      const tick = () => {
+        setPlayheadMs(Math.floor(audio.currentTime * 1000));
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    }
+  }
+
   async function addCueEvent() {
     if (!token || !sessionId) return;
     await apiFetch<{ id: string }>(`/autoque/sessions/${sessionId}/cues`, {
@@ -190,6 +371,10 @@ export default function AutoQueSessionPage() {
         <input value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} />
       </label>
       <label>
+        Upload Audio/Video (for analysis)
+        <input type="file" accept="audio/*,video/*" onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} />
+      </label>
+      <label>
         Duration (ms)
         <input
           type="number"
@@ -202,6 +387,10 @@ export default function AutoQueSessionPage() {
         <input value={palette} onChange={(event) => setPalette(event.target.value)} />
       </label>
       <button type="button" onClick={createSession}>Generate Session</button>
+      <button type="button" className="secondary" onClick={runAnalysis} disabled={!mediaFile || !sessionId}>
+        Run Analysis
+      </button>
+      {analysisStatus && <p>{analysisStatus}</p>}
 
       {sessionId && (
         <section>
@@ -237,6 +426,23 @@ export default function AutoQueSessionPage() {
           </label>
           <button type="button" onClick={addCueEvent}>Add Cue Event</button>
           <button type="button" className="secondary" onClick={loadCueEvents}>Refresh</button>
+          <div>
+            <button type="button" onClick={togglePlayback}>
+              {isPlaying ? "Pause" : "Play"}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={mediaDuration}
+              value={playheadMs}
+              onChange={(event) => setPlayheadMs(Number(event.target.value))}
+            />
+          </div>
+          <audio
+            ref={audioRef}
+            src={mediaFile ? URL.createObjectURL(mediaFile) : mediaUrl}
+            onEnded={() => setIsPlaying(false)}
+          />
           <ul>
             {cueEvents.map((cue) => (
               <li key={cue.id}>{cue.t_ms}ms - {cue.type}</li>
@@ -245,29 +451,7 @@ export default function AutoQueSessionPage() {
           {rigDetail?.stageBackgrounds?.[0] && (
             <section>
               <h4>Previs Lite</h4>
-              <div
-                style={{
-                  width: 800,
-                  height: 450,
-                  backgroundImage: `url(${rigDetail.stageBackgrounds[0].image_url})`,
-                  backgroundSize: "cover",
-                  border: "1px solid #1f2937"
-                }}
-              >
-                {rigDetail.placements.map((placement) => (
-                  <div
-                    key={placement.fixture_instance_id}
-                    style={{
-                      position: "relative",
-                      left: `${placement.stage_x * 100}%`,
-                      top: `${placement.stage_y * 100}%`,
-                      width: 8,
-                      height: 8,
-                      background: "#d76b6b"
-                    }}
-                  />
-                ))}
-              </div>
+              <canvas ref={canvasRef} width={800} height={450} style={{ border: "1px solid #1f2937" }} />
             </section>
           )}
         </section>

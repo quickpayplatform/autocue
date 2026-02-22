@@ -52,12 +52,47 @@ const cueEventSchema = z.object({
 
 const SESSION_EDITOR_ROLES: Role[] = ["CLIENT", "DESIGNER", "THEATRE_ADMIN", "THEATRE_TECH", "ADMIN"];
 
+const analysisSchema = z.object({
+  markers: z.array(z.object({
+    tMs: z.number().int().min(0),
+    type: z.enum(["BEAT", "DROP", "CHORUS", "VERSE", "CUT", "MOTION_PEAK"]),
+    confidence: z.number().min(0).max(1)
+  })).default([]),
+  energyCurve: z.array(z.object({
+    tMs: z.number().int().min(0),
+    value: z.number().min(0).max(1)
+  })).default([])
+});
+
 async function hasTheatreAccess(userId: string, theatreId: string): Promise<boolean> {
   const rows = await query<{ role: string }>(
     "SELECT role FROM venue_users WHERE venue_id = $1 AND user_id = $2",
     [theatreId, userId]
   );
   return rows.length > 0;
+}
+
+function generateCuesFromAnalysis(analysis: any, theme: any) {
+  const markers = analysis?.markers ?? [];
+  const energy = analysis?.energyCurve ?? [];
+  const palette = theme?.palette ?? [];
+  const constraints = theme?.constraints ?? {};
+  const maxIntensity = typeof constraints.maxIntensity === "number" ? constraints.maxIntensity : 1;
+
+  return markers.map((marker: any, index: number) => {
+    const energyPoint = energy.find((point: any) => point.tMs >= marker.tMs);
+    const intensityBase = energyPoint ? energyPoint.value : 0.6;
+    const intensity = Math.min(maxIntensity, Math.max(0.2, intensityBase));
+    return {
+      tMs: marker.tMs,
+      type: marker.type === "DROP" ? "HIT" : "LOOK",
+      targets: { groupIds: [], fixtureInstanceIds: [] },
+      look: {
+        intensity,
+        paletteColorRef: palette.length > 0 ? index % palette.length : 0
+      }
+    };
+  });
 }
 
 router.post("/media-assets", async (req: AuthedRequest, res) => {
@@ -115,6 +150,25 @@ router.post("/sessions", async (req: AuthedRequest, res) => {
   );
 
   res.status(201).json({ id: rows[0].id });
+});
+
+router.patch("/sessions/:id/analysis", async (req: AuthedRequest, res) => {
+  const parsed = analysisSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  if (!req.user || !SESSION_EDITOR_ROLES.includes(req.user.role)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  await query(
+    "UPDATE autoque_sessions SET analysis = $1, updated_at = now() WHERE id = $2",
+    [parsed.data, req.params.id]
+  );
+
+  res.json({ status: "ANALYSIS_SAVED" });
 });
 
 router.post("/sessions/:id/cues", async (req: AuthedRequest, res) => {
@@ -190,48 +244,32 @@ router.post("/sessions/:id/generate", async (req: AuthedRequest, res) => {
     id: string;
     media_asset_id: string;
     theme: Record<string, unknown>;
-  }>("SELECT id, media_asset_id, theme FROM autoque_sessions WHERE id = $1", [req.params.id]);
+    analysis: any;
+  }>("SELECT id, media_asset_id, theme, analysis FROM autoque_sessions WHERE id = $1", [req.params.id]);
   const session = sessions[0];
   if (!session) {
     res.status(404).json({ error: "Session not found" });
     return;
   }
 
-  const analysis = {
-    markers: Array.from({ length: 12 }).map((_, index) => ({
-      tMs: index * 5000,
-      type: index % 3 === 0 ? "DROP" : "BEAT",
-      confidence: 0.7
-    })),
-    energyCurve: Array.from({ length: 24 }).map((_, index) => ({
-      tMs: index * 2500,
-      value: Math.min(1, index / 24)
-    }))
-  };
-
-  await query(
-    "UPDATE autoque_sessions SET analysis = $1, updated_at = now() WHERE id = $2",
-    [analysis, session.id]
-  );
-
   await query("DELETE FROM cue_events WHERE session_id = $1", [session.id]);
 
-  const palette = (session.theme as any)?.palette ?? [];
-  for (let i = 0; i < analysis.markers.length; i += 1) {
-    const marker = analysis.markers[i];
+  const generated = generateCuesFromAnalysis(session.analysis, session.theme);
+  for (let i = 0; i < generated.length; i += 1) {
+    const marker = generated[i];
     await query(
       "INSERT INTO cue_events (id, session_id, t_ms, type, targets, look, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, now(), now())",
       [
         session.id,
         marker.tMs,
-        marker.type === "DROP" ? "HIT" : "LOOK",
-        { groupIds: [], fixtureInstanceIds: [] },
-        { intensity: Math.min(1, 0.4 + i * 0.05), paletteColorRef: i % Math.max(1, palette.length) }
+        marker.type,
+        marker.targets,
+        marker.look
       ]
     );
   }
 
-  res.json({ status: "GENERATED", markers: analysis.markers.length });
+  res.json({ status: "GENERATED", markers: generated.length });
 });
 
 router.get("/sessions/:id/export.csv", async (req: AuthedRequest, res) => {
