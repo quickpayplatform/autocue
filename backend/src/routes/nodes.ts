@@ -97,7 +97,7 @@ router.post("/node-pair/claim", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const venueId = parsed.data.venueId ?? req.user.theatreId ?? null;
+  const venueId = parsed.data.venueId ?? null;
   if (!venueId) {
     res.status(400).json({ error: "venueId is required" });
     return;
@@ -239,14 +239,9 @@ router.get("/node-downloads", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const venueId = req.user.theatreId;
-  if (!venueId) {
-    res.json({ available: false, downloads: [] });
-    return;
-  }
   const venues = await query<{ plan_status: string; node_enabled: boolean }>(
-    "SELECT plan_status, node_enabled FROM venues WHERE id = $1",
-    [venueId]
+    "SELECT plan_status, node_enabled FROM venues v JOIN venue_users vu ON vu.venue_id = v.id WHERE vu.user_id = $1 LIMIT 1",
+    [req.user.userId]
   );
   const venue = venues[0];
   if (!venue || (!venue.node_enabled && venue.plan_status !== "active")) {

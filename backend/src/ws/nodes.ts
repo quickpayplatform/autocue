@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
+import type { IncomingMessage } from "node:http";
 import bcrypt from "bcrypt";
 import { query } from "../db.js";
 import { logger } from "../logger.js";
@@ -13,7 +14,7 @@ const nodeConnections = new Map<string, NodeConnection>();
 export function createNodeWebSocketServer(server: any) {
   const wss = new WebSocketServer({ server, path: "/ws/nodes" });
 
-  wss.on("connection", async (ws, req) => {
+  wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
       ws.close();
@@ -42,7 +43,7 @@ export function createNodeWebSocketServer(server: any) {
     nodeConnections.set(nodeId, { ws, nodeId });
     await query("UPDATE nodes SET status = 'online', last_seen_at = now(), updated_at = now() WHERE id = $1", [nodeId]);
 
-    ws.on("message", async (data) => {
+    ws.on("message", async (data: WebSocket.RawData) => {
       try {
         const payload = JSON.parse(data.toString());
         if (payload.type === "node.heartbeat") {

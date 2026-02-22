@@ -339,8 +339,8 @@ router.patch("/:id/approve", requireRole(OPERATOR_ROLES), async (req: AuthedRequ
     return;
   }
 
-  const cueRows = await query<{ cue_number: number; cue_list: number; status: string; venue_id: string }>(
-    "SELECT cue_number, cue_list, status, venue_id FROM cues WHERE id = $1",
+  const cueRows = await query<{ cue_number: number; cue_list: number; status: string; venue_id: string; fade_time: number }>(
+    "SELECT cue_number, cue_list, status, venue_id, fade_time FROM cues WHERE id = $1",
     [req.params.id]
   );
   const cue = cueRows[0];
@@ -353,7 +353,8 @@ router.patch("/:id/approve", requireRole(OPERATOR_ROLES), async (req: AuthedRequ
     return;
   }
   const venue = await getVenueContext(req.user.userId, cue.venue_id);
-  if (!venue && req.user.role !== "ADMIN") {
+  const venueSettings = venue ?? (req.user.role === "ADMIN" ? await getVenueSettings(cue.venue_id) : null);
+  if (!venueSettings) {
     res.status(403).json({ error: "Not a member of this venue" });
     return;
   }
@@ -426,14 +427,14 @@ router.patch("/:id/reject", requireRole(OPERATOR_ROLES), async (req: AuthedReque
     "SELECT status, venue_id FROM cues WHERE id = $1",
     [req.params.id]
   );
-  const venue = await getVenueContext(req.user.userId, cue.venue_id);
-  if (!venue && req.user.role !== "ADMIN") {
-    res.status(403).json({ error: "Not a member of this venue" });
-    return;
-  }
   const cue = cueRows[0];
   if (!cue) {
     res.status(404).json({ error: "Cue not found" });
+    return;
+  }
+  const venue = await getVenueContext(req.user.userId, cue.venue_id);
+  if (!venue && req.user.role !== "ADMIN") {
+    res.status(403).json({ error: "Not a member of this venue" });
     return;
   }
   if (cue.status !== "PENDING") {
