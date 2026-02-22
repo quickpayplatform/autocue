@@ -199,6 +199,20 @@ router.post("/nodes/:nodeId/command", async (req: AuthedRequest, res) => {
   res.json({ accepted });
 });
 
+router.post("/nodes/:nodeId/cues/:cueId/result", async (req, res) => {
+  const ok = Boolean(req.body?.ok);
+  const status = ok ? "EXECUTED" : "FAILED";
+  await query(
+    "UPDATE cues SET status = $1, executed_at = CASE WHEN $1 = 'EXECUTED' THEN now() ELSE executed_at END, updated_at = now() WHERE id = $2",
+    [status, req.params.cueId]
+  );
+  await query(
+    "INSERT INTO audit_logs (id, cue_id, venue_id, event_type, message, created_at) VALUES (gen_random_uuid(), $1, (SELECT venue_id FROM cues WHERE id = $1), $2, $3, now())",
+    [req.params.cueId, ok ? "EXECUTED" : "FAILED", ok ? "Node reported execution" : "Node reported failure"]
+  );
+  res.json({ status });
+});
+
 router.get("/venues/:venueId/nodes", async (req: AuthedRequest, res) => {
   if (!req.user) {
     res.status(401).json({ error: "Unauthorized" });

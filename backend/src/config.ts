@@ -17,7 +17,7 @@ export const config = {
   jwtSecret: requireEnv("JWT_SECRET"),
   jwtIssuer: process.env.JWT_ISSUER ?? "autoque",
   jwtAudience: process.env.JWT_AUDIENCE ?? "autoque-users",
-  oscIp: requireEnv("OSC_IP"),
+  oscIp: process.env.OSC_IP ?? "",
   oscPort: Number(process.env.OSC_PORT ?? 3032),
   oscRateMs: Number(process.env.OSC_RATE_MS ?? 100),
   oscRetryAttempts: Number(process.env.OSC_RETRY_ATTEMPTS ?? 3),

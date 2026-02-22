@@ -1,16 +1,15 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { cueApprovalSchema, cueCreateSchema, cueUpdateSchema } from "../validation/cues.js";
 import { AuthedRequest } from "../middleware/auth.js";
 import { requireRole } from "../middleware/roles.js";
 import { cueSubmissionLimiter } from "../middleware/rateLimit.js";
 import { pool, query } from "../db.js";
 import { logAudit } from "../services/audit.js";
-import { CueExecutor } from "../services/executor.js";
 import { config } from "../config.js";
 import { Role } from "../types.js";
 
 const router = Router();
-const executor = new CueExecutor();
 
 const OPERATOR_ROLES: Role[] = ["OPERATOR", "ADMIN", "THEATRE_ADMIN", "THEATRE_TECH"];
 const SUBMITTER_ROLES: Role[] = ["SUBMITTER", "CLIENT", "DESIGNER"];
@@ -44,6 +43,19 @@ async function getVenueSettings(venueId: string) {
     [venueId]
   );
   return rows[0] ?? null;
+}
+
+async function sendCueToNode(app: any, venueId: string, payload: any) {
+  const nodes = await query<{ id: string }>(
+    "SELECT id FROM nodes WHERE venue_id = $1 AND status = 'online' ORDER BY last_seen_at DESC LIMIT 1",
+    [venueId]
+  );
+  const node = nodes[0];
+  if (!node) {
+    return false;
+  }
+  const nodeWs = app.get("nodeWs");
+  return nodeWs?.sendCommand?.(node.id, payload) ?? false;
 }
 
 router.post("/", cueSubmissionLimiter, async (req: AuthedRequest, res) => {
@@ -370,7 +382,36 @@ router.patch("/:id/approve", requireRole(OPERATOR_ROLES), async (req: AuthedRequ
 
   await logAudit(req.params.id, cue.venue_id, "APPROVED", `Cue approved by ${req.user.userId}`);
 
-  executor.handleApprovedCue(req.params.id, parsed.data.label).catch(() => undefined);
+  const channels = await query(
+    "SELECT channel_number, level FROM cue_channels WHERE cue_id = $1 ORDER BY channel_number ASC",
+    [req.params.id]
+  );
+  const commands = [
+    { address: "/eos/newcmd", args: [] },
+    ...channels.map((channel: any) => ({
+      address: `/eos/channel/${channel.channel_number}/at`,
+      args: [channel.level]
+    })),
+    { address: "/eos/record/cue", args: [cue.cue_number] },
+    { address: `/eos/cue/${cue.cue_number}/time`, args: [cue.fade_time] }
+  ];
+
+  if (parsed.data.label) {
+    commands.push({ address: `/eos/cue/${cue.cue_number}/label`, args: [parsed.data.label] });
+  }
+
+  const sent = await sendCueToNode(req.app, cue.venue_id, {
+    protocolVersion: 1,
+    id: crypto.randomUUID(),
+    ts: new Date().toISOString(),
+    type: "cue.execute",
+    payload: {
+      cueId: req.params.id,
+      commands
+    }
+  });
+
+  await logAudit(req.params.id, cue.venue_id, "NODE_SEND", sent ? "Sent to node" : "No online node available");
 
   res.json({ status: "APPROVED" });
 });

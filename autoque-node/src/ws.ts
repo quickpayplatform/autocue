@@ -38,6 +38,17 @@ export function connectNodeWs(config: NodeWsConfig) {
           })
         );
       }
+      if (message.type === "cue.execute") {
+        const commands = message.payload.commands ?? [];
+        commands.forEach((command: any) => {
+          config.oscClient.send(command.address, command.args ?? []);
+        });
+        await fetch(`${config.cloudUrl}/api/nodes/${config.nodeId}/cues/${message.payload.cueId}/result`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.nodeToken}` },
+          body: JSON.stringify({ ok: true })
+        });
+      }
     } catch {
       ws.send(
         JSON.stringify({
