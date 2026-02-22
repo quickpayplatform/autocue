@@ -437,6 +437,11 @@ router.patch("/:id/reject", requireRole(OPERATOR_ROLES), async (req: AuthedReque
     res.status(403).json({ error: "Not a member of this venue" });
     return;
   }
+  const venue = await getVenueContext(req.user.userId, cue.venue_id);
+  if (!venue && req.user.role !== "ADMIN") {
+    res.status(403).json({ error: "Not a member of this venue" });
+    return;
+  }
   if (cue.status !== "PENDING") {
     res.status(409).json({ error: "Cue is not pending" });
     return;
