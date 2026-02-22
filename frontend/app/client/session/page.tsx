@@ -20,6 +20,12 @@ interface CueEvent {
   type: string;
 }
 
+interface RigDetail {
+  stageBackgrounds: Array<{ image_url: string; calibration: any; width_px: number; height_px: number }>;
+  fixtures: Array<{ id: string; label: string }>;
+  placements: Array<{ fixture_instance_id: string; stage_x: number; stage_y: number }>;
+}
+
 export default function AutoQueSessionPage() {
   const [token, setToken] = useState<string | null>(null);
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -34,6 +40,8 @@ export default function AutoQueSessionPage() {
   const [cueType, setCueType] = useState("LOOK");
   const [cueIntensity, setCueIntensity] = useState(0.6);
   const [cueEvents, setCueEvents] = useState<CueEvent[]>([]);
+  const [rigDetail, setRigDetail] = useState<RigDetail | null>(null);
+  const [rigMismatch, setRigMismatch] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,6 +70,12 @@ export default function AutoQueSessionPage() {
     }
   }
 
+  async function loadRigDetail(selectedRigId: string) {
+    if (!token || !selectedRigId) return;
+    const detail = await apiFetch<RigDetail>(`/rigs/${selectedRigId}/detail`, { method: "GET" }, token);
+    setRigDetail(detail);
+  }
+
   useEffect(() => {
     loadVenues().catch((error) => setMessage((error as Error).message));
   }, [token]);
@@ -71,6 +85,12 @@ export default function AutoQueSessionPage() {
       loadRigVersions(venueId).catch((error) => setMessage((error as Error).message));
     }
   }, [venueId]);
+
+  useEffect(() => {
+    if (rigVersionId) {
+      loadRigDetail(rigVersionId).catch((error) => setMessage((error as Error).message));
+    }
+  }, [rigVersionId]);
 
   async function createSession() {
     if (!token || !venueId || !rigVersionId) return;
@@ -113,6 +133,18 @@ export default function AutoQueSessionPage() {
     if (!token || !sessionId) return;
     const data = await apiFetch<CueEvent[]>(`/autoque/sessions/${sessionId}/cues`, { method: "GET" }, token);
     setCueEvents(data);
+  }
+
+  async function generateDraft() {
+    if (!token || !sessionId) return;
+    await apiFetch(`/autoque/sessions/${sessionId}/generate`, { method: "POST" }, token);
+    await loadCueEvents();
+  }
+
+  async function checkRigMismatch() {
+    if (!token || !sessionId) return;
+    const summary = await apiFetch<{ rigMismatch: boolean }>(`/autoque/sessions/${sessionId}/summary`, { method: "GET" }, token);
+    setRigMismatch(summary.rigMismatch);
   }
 
   async function addCueEvent() {
@@ -174,6 +206,9 @@ export default function AutoQueSessionPage() {
       {sessionId && (
         <section>
           <h3>Timeline</h3>
+          <button type="button" className="secondary" onClick={generateDraft}>Generate Draft Cues</button>
+          <button type="button" className="secondary" onClick={checkRigMismatch}>Check Rig Mismatch</button>
+          {rigMismatch && <p>Warning: Session rig differs from current published rig.</p>}
           <label>
             Cue Time (ms)
             <input type="number" value={cueTime} onChange={(event) => setCueTime(Number(event.target.value))} />
@@ -207,6 +242,34 @@ export default function AutoQueSessionPage() {
               <li key={cue.id}>{cue.t_ms}ms - {cue.type}</li>
             ))}
           </ul>
+          {rigDetail?.stageBackgrounds?.[0] && (
+            <section>
+              <h4>Previs Lite</h4>
+              <div
+                style={{
+                  width: 800,
+                  height: 450,
+                  backgroundImage: `url(${rigDetail.stageBackgrounds[0].image_url})`,
+                  backgroundSize: "cover",
+                  border: "1px solid #1f2937"
+                }}
+              >
+                {rigDetail.placements.map((placement) => (
+                  <div
+                    key={placement.fixture_instance_id}
+                    style={{
+                      position: "relative",
+                      left: `${placement.stage_x * 100}%`,
+                      top: `${placement.stage_y * 100}%`,
+                      width: 8,
+                      height: 8,
+                      background: "#d76b6b"
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
         </section>
       )}
     </section>

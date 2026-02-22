@@ -115,6 +115,64 @@ router.get("/", async (req: AuthedRequest, res) => {
   res.json(rows);
 });
 
+router.get("/:id/detail", async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const rigRows = await query<{ id: string; theatre_id: string; name: string; status: string }>(
+    "SELECT id, theatre_id, name, status FROM rig_versions WHERE id = $1",
+    [req.params.id]
+  );
+  const rig = rigRows[0];
+  if (!rig) {
+    res.status(404).json({ error: "Rig not found" });
+    return;
+  }
+
+  const allowed = await requireTheatreRole(req.user.userId, rig.theatre_id);
+  if (!allowed && req.user.role !== "ADMIN") {
+    res.status(403).json({ error: "Not a theatre member" });
+    return;
+  }
+
+  const positions = await query(
+    "SELECT id, name, type, order_index FROM positions WHERE rig_version_id = $1 ORDER BY order_index ASC",
+    [rig.id]
+  );
+  const fixtures = await query(
+    "SELECT id, fixture_type_id, position_id, label, quantity, orientation FROM fixture_instances WHERE rig_version_id = $1",
+    [rig.id]
+  );
+  const groups = await query(
+    "SELECT id, name FROM groups WHERE rig_version_id = $1",
+    [rig.id]
+  );
+  const groupFixtures = await query(
+    "SELECT group_id, fixture_instance_id FROM group_fixtures WHERE group_id IN (SELECT id FROM groups WHERE rig_version_id = $1)",
+    [rig.id]
+  );
+  const stageBackgrounds = await query(
+    "SELECT id, image_url, width_px, height_px, camera_notes, calibration FROM stage_backgrounds WHERE rig_version_id = $1 ORDER BY created_at DESC",
+    [rig.id]
+  );
+  const placements = await query(
+    "SELECT id, fixture_instance_id, stage_x, stage_y, height, photo_x_px, photo_y_px FROM fixture_placements WHERE fixture_instance_id IN (SELECT id FROM fixture_instances WHERE rig_version_id = $1)",
+    [rig.id]
+  );
+
+  res.json({
+    rig,
+    positions,
+    fixtures,
+    groups,
+    groupFixtures,
+    stageBackgrounds,
+    placements
+  });
+});
+
 router.post("/:id/positions", async (req: AuthedRequest, res) => {
   const parsed = positionSchema.safeParse(req.body);
   if (!parsed.success) {

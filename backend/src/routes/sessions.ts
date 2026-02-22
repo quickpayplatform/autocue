@@ -3,6 +3,7 @@ import { z } from "zod";
 import { query } from "../db.js";
 import { AuthedRequest } from "../middleware/auth.js";
 import { Role } from "../types.js";
+import PDFDocument from "pdfkit";
 
 const router = Router();
 
@@ -146,6 +147,163 @@ router.get("/sessions/:id/cues", async (req: AuthedRequest, res) => {
     [req.params.id]
   );
   res.json(rows);
+});
+
+router.get("/sessions/:id/summary", async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const sessionRows = await query<{
+    id: string;
+    theatre_id: string;
+    rig_version_id: string;
+    status: string;
+  }>("SELECT id, theatre_id, rig_version_id, status FROM autoque_sessions WHERE id = $1", [req.params.id]);
+
+  const session = sessionRows[0];
+  if (!session) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+
+  const latestRig = await query<{ id: string; name: string }>(
+    "SELECT id, name FROM rig_versions WHERE theatre_id = $1 AND status = 'PUBLISHED' ORDER BY created_at DESC LIMIT 1",
+    [session.theatre_id]
+  );
+
+  res.json({
+    session,
+    latestRig: latestRig[0] ?? null,
+    rigMismatch: latestRig[0] ? latestRig[0].id !== session.rig_version_id : false
+  });
+});
+
+router.post("/sessions/:id/generate", async (req: AuthedRequest, res) => {
+  if (!req.user || !SESSION_EDITOR_ROLES.includes(req.user.role)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const sessions = await query<{
+    id: string;
+    media_asset_id: string;
+    theme: Record<string, unknown>;
+  }>("SELECT id, media_asset_id, theme FROM autoque_sessions WHERE id = $1", [req.params.id]);
+  const session = sessions[0];
+  if (!session) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+
+  const analysis = {
+    markers: Array.from({ length: 12 }).map((_, index) => ({
+      tMs: index * 5000,
+      type: index % 3 === 0 ? "DROP" : "BEAT",
+      confidence: 0.7
+    })),
+    energyCurve: Array.from({ length: 24 }).map((_, index) => ({
+      tMs: index * 2500,
+      value: Math.min(1, index / 24)
+    }))
+  };
+
+  await query(
+    "UPDATE autoque_sessions SET analysis = $1, updated_at = now() WHERE id = $2",
+    [analysis, session.id]
+  );
+
+  await query("DELETE FROM cue_events WHERE session_id = $1", [session.id]);
+
+  const palette = (session.theme as any)?.palette ?? [];
+  for (let i = 0; i < analysis.markers.length; i += 1) {
+    const marker = analysis.markers[i];
+    await query(
+      "INSERT INTO cue_events (id, session_id, t_ms, type, targets, look, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, now(), now())",
+      [
+        session.id,
+        marker.tMs,
+        marker.type === "DROP" ? "HIT" : "LOOK",
+        { groupIds: [], fixtureInstanceIds: [] },
+        { intensity: Math.min(1, 0.4 + i * 0.05), paletteColorRef: i % Math.max(1, palette.length) }
+      ]
+    );
+  }
+
+  res.json({ status: "GENERATED", markers: analysis.markers.length });
+});
+
+router.get("/sessions/:id/export.csv", async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const cues = await query<{
+    t_ms: number;
+    duration_ms: number | null;
+    type: string;
+    look: any;
+    targets: any;
+  }>(
+    "SELECT t_ms, duration_ms, type, look, targets FROM cue_events WHERE session_id = $1 ORDER BY t_ms ASC",
+    [req.params.id]
+  );
+
+  const lines = [
+    "timecode,cueType,targetGroups,color,intensity,notes",
+    ...cues.map((cue) => {
+      const minutes = Math.floor(cue.t_ms / 60000).toString().padStart(2, "0");
+      const seconds = Math.floor((cue.t_ms % 60000) / 1000).toString().padStart(2, "0");
+      const millis = Math.floor(cue.t_ms % 1000).toString().padStart(3, "0");
+      const timecode = `${minutes}:${seconds}.${millis}`;
+      return [
+        timecode,
+        cue.type,
+        (cue.targets?.groupIds ?? []).join("|"),
+        cue.look?.paletteColorRef ?? "",
+        cue.look?.intensity ?? "",
+        ""
+      ].join(",");
+    })
+  ];
+
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", "attachment; filename=autoque-cues.csv");
+  res.send(lines.join("\n"));
+});
+
+router.get("/sessions/:id/export.pdf", async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const cues = await query<{
+    t_ms: number;
+    type: string;
+    look: any;
+  }>("SELECT t_ms, type, look FROM cue_events WHERE session_id = $1 ORDER BY t_ms ASC", [req.params.id]);
+
+  const doc = new PDFDocument({ margin: 40 });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", "attachment; filename=autoque-cues.pdf");
+  doc.pipe(res);
+
+  doc.fontSize(18).text("AutoQue Cue Sheet", { align: "left" });
+  doc.moveDown();
+
+  cues.forEach((cue, index) => {
+    const minutes = Math.floor(cue.t_ms / 60000).toString().padStart(2, "0");
+    const seconds = Math.floor((cue.t_ms % 60000) / 1000).toString().padStart(2, "0");
+    const millis = Math.floor(cue.t_ms % 1000).toString().padStart(3, "0");
+    doc.fontSize(12).text(
+      `${index + 1}. ${minutes}:${seconds}.${millis} | ${cue.type} | Intensity ${cue.look?.intensity ?? ""}`
+    );
+  });
+
+  doc.end();
 });
 
 router.patch("/sessions/:id/submit", async (req: AuthedRequest, res) => {

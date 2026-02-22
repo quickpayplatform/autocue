@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import { applyHomography, computeHomography, invertHomography, Point } from "../../../lib/homography";
 
 interface Venue {
   id: string;
@@ -44,6 +45,15 @@ export default function RigBuilderPage() {
 
   const [groupName, setGroupName] = useState("");
   const [groupFixtureIds, setGroupFixtureIds] = useState("");
+  const [stageImageUrl, setStageImageUrl] = useState("");
+  const [stageWidth, setStageWidth] = useState(40);
+  const [stageDepth, setStageDepth] = useState(30);
+  const [calibrationPoints, setCalibrationPoints] = useState<Point[]>([]);
+  const [derivedTransform, setDerivedTransform] = useState<number[][] | null>(null);
+  const [inverseTransform, setInverseTransform] = useState<number[][] | null>(null);
+  const [placementFixtureId, setPlacementFixtureId] = useState("");
+  const [placedFixtures, setPlacedFixtures] = useState<Array<{ id: string; x: number; y: number }>>([]);
+  const [canvasDims] = useState({ width: 800, height: 450 });
 
   useEffect(() => {
     setToken(localStorage.getItem("autoque_token"));
@@ -128,6 +138,77 @@ export default function RigBuilderPage() {
       body: JSON.stringify({ name: groupName, fixtureInstanceIds: ids })
     }, token);
     setMessage("Group created.");
+  }
+
+  function handleCalibrationClick(event: React.MouseEvent<HTMLCanvasElement>) {
+    if (!stageImageUrl) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const nextPoints = [...calibrationPoints, { x, y }].slice(0, 4);
+    setCalibrationPoints(nextPoints);
+
+    if (nextPoints.length === 4) {
+      const stagePoints: Point[] = [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 }
+      ];
+      const matrix = computeHomography(stagePoints, nextPoints);
+      setDerivedTransform(matrix);
+      setInverseTransform(invertHomography(matrix));
+    }
+  }
+
+  function handlePlacementClick(event: React.MouseEvent<HTMLCanvasElement>) {
+    if (!inverseTransform || !placementFixtureId) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const stagePoint = applyHomography(inverseTransform, { x, y });
+    const bounded = {
+      x: Math.min(1, Math.max(0, stagePoint.x)),
+      y: Math.min(1, Math.max(0, stagePoint.y))
+    };
+    setPlacedFixtures((prev) => [...prev, { id: placementFixtureId, x: bounded.x, y: bounded.y }]);
+  }
+
+  async function saveStageBackground() {
+    if (!token || !rigId || !derivedTransform) return;
+    await apiFetch<{ id: string }>(`/rigs/${rigId}/stage-background`, {
+      method: "POST",
+      body: JSON.stringify({
+        imageUrl: stageImageUrl,
+        widthPx: canvasDims.width,
+        heightPx: canvasDims.height,
+        cameraNotes: "",
+        calibration: {
+          type: "FOUR_POINT_STAGE_RECT",
+          pointsPx: calibrationPoints,
+          stageDims: { width: stageWidth, depth: stageDepth, unit: "ft" },
+          derivedTransform
+        }
+      })
+    }, token);
+    setMessage("Stage background saved.");
+  }
+
+  async function savePlacements() {
+    if (!token || !rigId) return;
+    for (const placement of placedFixtures) {
+      await apiFetch<{ id: string }>(`/rigs/${rigId}/placements`, {
+        method: "POST",
+        body: JSON.stringify({
+          fixtureInstanceId: placement.id,
+          stageX: placement.x,
+          stageY: placement.y,
+          photoXpx: null,
+          photoYpx: null
+        })
+      }, token);
+    }
+    setMessage("Placements saved.");
   }
 
   return (
@@ -244,6 +325,68 @@ export default function RigBuilderPage() {
           onChange={(event) => setGroupFixtureIds(event.target.value)}
         />
         <button type="button" onClick={addGroup}>Add Group</button>
+      </section>
+
+      <section>
+        <h3>Stage Background & Calibration</h3>
+        <input
+          placeholder="Stage image URL"
+          value={stageImageUrl}
+          onChange={(event) => setStageImageUrl(event.target.value)}
+        />
+        <div>
+          <label>
+            Stage Width (ft)
+            <input
+              type="number"
+              value={stageWidth}
+              onChange={(event) => setStageWidth(Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Stage Depth (ft)
+            <input
+              type="number"
+              value={stageDepth}
+              onChange={(event) => setStageDepth(Number(event.target.value))}
+            />
+          </label>
+        </div>
+        <p>Click the four stage corners on the image (DSL, DSR, USR, USL).</p>
+        <canvas
+          width={canvasDims.width}
+          height={canvasDims.height}
+          onClick={handleCalibrationClick}
+          style={{
+            border: "1px solid #1f2937",
+            background: stageImageUrl ? `url(${stageImageUrl}) center/cover` : "#111"
+          }}
+        />
+        <button type="button" onClick={saveStageBackground} disabled={!derivedTransform}>
+          Save Calibration
+        </button>
+      </section>
+
+      <section>
+        <h3>Fixture Placement</h3>
+        <input
+          placeholder="Fixture Instance ID"
+          value={placementFixtureId}
+          onChange={(event) => setPlacementFixtureId(event.target.value)}
+        />
+        <p>Click on the stage image to place fixtures.</p>
+        <canvas
+          width={canvasDims.width}
+          height={canvasDims.height}
+          onClick={handlePlacementClick}
+          style={{
+            border: "1px solid #1f2937",
+            background: stageImageUrl ? `url(${stageImageUrl}) center/cover` : "#111"
+          }}
+        />
+        <button type="button" onClick={savePlacements} disabled={placedFixtures.length === 0}>
+          Save Placements
+        </button>
       </section>
     </section>
   );
