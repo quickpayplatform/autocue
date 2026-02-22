@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: autocue-api-new
+    name: autoque-api-new
     runtime: node
     rootDir: backend
     plan: starter
@@ -12,14 +12,14 @@ services:
         value: production
       - key: DATABASE_URL
         fromDatabase:
-          name: autocue-postgres
+          name: autoque-postgres
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_ISSUER
-        value: autocue
+        value: autoque
       - key: JWT_AUDIENCE
-        value: autocue-users
+        value: autoque-users
       - key: OSC_IP
         value: 127.0.0.1
       - key: OSC_PORT
@@ -46,5 +46,5 @@ services:
         value: info
 
 databases:
-  - name: autocue-postgres
+  - name: autoque-postgres
     plan: starter

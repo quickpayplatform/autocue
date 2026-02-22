@@ -2,7 +2,7 @@ export default function HomePage() {
   return (
     <section className="landing">
       <div className="landing-card">
-        <p className="eyebrow">AutoCue</p>
+        <p className="eyebrow">AutoQue</p>
         <h2>Precision cues. Human-approved.</h2>
         <p className="lede">
           Remote lighting cue requests for ETC Eos with validation, operator approval,

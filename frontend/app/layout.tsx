@@ -2,7 +2,7 @@ import "./globals.css";
 import type { ReactNode } from "react";
 
 export const metadata = {
-  title: "AutoCue",
+  title: "AutoQue",
   description: "Remote cue submission and operator approval"
 };
 
@@ -12,7 +12,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <main>
           <header>
-            <h1>AutoCue</h1>
+            <h1>AutoQue</h1>
             <p>Remote cue submission with operator approval.</p>
           </header>
           {children}

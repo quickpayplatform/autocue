@@ -29,7 +29,7 @@ router.post("/register", async (req, res) => {
 
   const passwordHash = await hashPassword(password);
   const rows = await query<{ id: string; role: string }>(
-    "INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, 'SUBMITTER', now(), now()) RETURNING id, role",
+    "INSERT INTO users (id, email, password_hash, role, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, 'CLIENT', now(), now()) RETURNING id, role",
     [email, passwordHash]
   );
 
@@ -40,7 +40,7 @@ router.post("/register", async (req, res) => {
     expiresIn: "12h"
   });
 
-  await logAudit(null, "REGISTER", `User registered: ${email}`);
+  await logAudit(null, null, "REGISTER", `User registered: ${email}`);
 
   res.status(201).json({ token });
 });
@@ -76,7 +76,7 @@ router.post("/login", async (req, res) => {
     expiresIn: "12h"
   });
 
-  await logAudit(null, "LOGIN", `User logged in: ${email}`);
+  await logAudit(null, null, "LOGIN", `User logged in: ${email}`);
 
   res.json({ token });
 });

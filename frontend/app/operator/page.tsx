@@ -17,6 +17,12 @@ interface CueDetail extends CueSummary {
   channels: Array<{ id: string; channel_number: number; level: number }>;
 }
 
+interface Venue {
+  id: string;
+  name: string;
+  role: string;
+}
+
 interface CueLog {
   id: string;
   event_type: string;
@@ -29,18 +35,37 @@ export default function OperatorPage() {
   const [cues, setCues] = useState<CueSummary[]>([]);
   const [selected, setSelected] = useState<CueDetail | null>(null);
   const [logs, setLogs] = useState<CueLog[]>([]);
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [venueId, setVenueId] = useState<string>("");
   const [label, setLabel] = useState("");
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    setToken(localStorage.getItem("autocue_token"));
+    setToken(localStorage.getItem("autoque_token"));
   }, []);
 
-  async function loadCues() {
+  async function loadVenues() {
     if (!token) return;
     try {
-      const data = await apiFetch<CueSummary[]>("/cues", { method: "GET" }, token);
+      const data = await apiFetch<Venue[]>("/venues", { method: "GET" }, token);
+      setVenues(data);
+      if (!venueId && data.length > 0) {
+        setVenueId(data[0].id);
+      }
+    } catch (error) {
+      setMessage((error as Error).message);
+    }
+  }
+
+  async function loadCues(selectedVenueId: string) {
+    if (!token || !selectedVenueId) return;
+    try {
+      const data = await apiFetch<CueSummary[]>(
+        `/cues?venueId=${encodeURIComponent(selectedVenueId)}`,
+        { method: "GET" },
+        token
+      );
       setCues(data);
     } catch (error) {
       setMessage((error as Error).message);
@@ -48,8 +73,14 @@ export default function OperatorPage() {
   }
 
   useEffect(() => {
-    loadCues().catch(() => undefined);
+    loadVenues().catch(() => undefined);
   }, [token]);
+
+  useEffect(() => {
+    if (venueId) {
+      loadCues(venueId).catch(() => undefined);
+    }
+  }, [venueId]);
 
   async function loadDetail(cueId: string) {
     if (!token) return;
@@ -73,7 +104,7 @@ export default function OperatorPage() {
         body: JSON.stringify({ confirmDuplicate, label })
       }, token);
       setMessage("Cue approved.");
-      await loadCues();
+      await loadCues(venueId);
     } catch (error) {
       setMessage((error as Error).message);
     }
@@ -87,7 +118,7 @@ export default function OperatorPage() {
         method: "PATCH"
       }, token);
       setMessage("Cue rejected.");
-      await loadCues();
+      await loadCues(venueId);
     } catch (error) {
       setMessage((error as Error).message);
     }
@@ -97,9 +128,19 @@ export default function OperatorPage() {
     <section>
       <h2>Operator Approval</h2>
       {message && <p>{message}</p>}
+      <label>
+        Venue
+        <select value={venueId} onChange={(event) => setVenueId(event.target.value)}>
+          {venues.map((venue) => (
+            <option key={venue.id} value={venue.id}>
+              {venue.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <section>
         <h3>Pending Cues</h3>
-        <button type="button" className="secondary" onClick={() => loadCues()}>
+        <button type="button" className="secondary" onClick={() => loadCues(venueId)}>
           Refresh
         </button>
         <ul>

@@ -18,7 +18,7 @@ export default function HomePage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState<string | null>(() =>
-    typeof window === "undefined" ? null : localStorage.getItem("autocue_token")
+    typeof window === "undefined" ? null : localStorage.getItem("autoque_token")
   );
   const [message, setMessage] = useState<string | null>(null);
 
@@ -31,7 +31,7 @@ export default function HomePage() {
         method: "POST",
         body: JSON.stringify({ email, password })
       });
-      localStorage.setItem("autocue_token", result.token);
+      localStorage.setItem("autoque_token", result.token);
       setToken(result.token);
       setMessage("Authenticated successfully.");
     } catch (error) {
@@ -40,7 +40,7 @@ export default function HomePage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("autocue_token");
+    localStorage.removeItem("autoque_token");
     setToken(null);
     setMessage("Logged out.");
   }

@@ -13,6 +13,12 @@ interface Cue {
   created_at: string;
 }
 
+interface Venue {
+  id: string;
+  name: string;
+  role: string;
+}
+
 function parseChannels(raw: string): Array<{ channelNumber: number; level: number }> {
   return raw
     .split("\n")
@@ -36,16 +42,35 @@ export default function DashboardPage() {
   const [channels, setChannels] = useState("1:50\n2:75");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [cues, setCues] = useState<Cue[]>([]);
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [venueId, setVenueId] = useState<string>("");
 
   useEffect(() => {
-    const stored = localStorage.getItem("autocue_token");
+    const stored = localStorage.getItem("autoque_token");
     setToken(stored);
   }, []);
 
-  async function loadCues() {
+  async function loadVenues() {
     if (!token) return;
     try {
-      const data = await apiFetch<Cue[]>("/cues", { method: "GET" }, token);
+      const data = await apiFetch<Venue[]>("/venues", { method: "GET" }, token);
+      setVenues(data);
+      if (!venueId && data.length > 0) {
+        setVenueId(data[0].id);
+      }
+    } catch (error) {
+      setStatusMessage((error as Error).message);
+    }
+  }
+
+  async function loadCues(selectedVenueId: string) {
+    if (!token || !selectedVenueId) return;
+    try {
+      const data = await apiFetch<Cue[]>(
+        `/cues?venueId=${encodeURIComponent(selectedVenueId)}`,
+        { method: "GET" },
+        token
+      );
       setCues(data);
     } catch (error) {
       setStatusMessage((error as Error).message);
@@ -53,8 +78,14 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    loadCues().catch(() => undefined);
+    loadVenues().catch(() => undefined);
   }, [token]);
+
+  useEffect(() => {
+    if (venueId) {
+      loadCues(venueId).catch(() => undefined);
+    }
+  }, [venueId]);
 
   async function submitCue() {
     if (!token) {
@@ -64,6 +95,7 @@ export default function DashboardPage() {
     setStatusMessage(null);
     try {
       const payload = {
+        venueId,
         cueNumber,
         cueList,
         fadeTime,
@@ -75,7 +107,7 @@ export default function DashboardPage() {
         body: JSON.stringify(payload)
       }, token);
       setStatusMessage("Cue submitted.");
-      await loadCues();
+      await loadCues(venueId);
     } catch (error) {
       setStatusMessage((error as Error).message);
     }
@@ -84,6 +116,16 @@ export default function DashboardPage() {
   return (
     <section>
       <h2>Submit Cue</h2>
+      <label>
+        Venue
+        <select value={venueId} onChange={(event) => setVenueId(event.target.value)}>
+          {venues.map((venue) => (
+            <option key={venue.id} value={venue.id}>
+              {venue.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -135,7 +177,7 @@ export default function DashboardPage() {
       {statusMessage && <p>{statusMessage}</p>}
       <section>
         <h3>Your Cue Requests</h3>
-        <button type="button" className="secondary" onClick={() => loadCues()}>
+        <button type="button" className="secondary" onClick={() => loadCues(venueId)}>
           Refresh
         </button>
         <ul>

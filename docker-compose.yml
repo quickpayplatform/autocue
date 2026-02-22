@@ -3,12 +3,12 @@ version: "3.9"
 services:
   db:
     image: postgres:16-alpine
-    container_name: autocue-db
+    container_name: autoque-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: autocue
-      POSTGRES_USER: autocue
-      POSTGRES_PASSWORD: autocue
+      POSTGRES_DB: autoque
+      POSTGRES_USER: autoque
+      POSTGRES_PASSWORD: autoque
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./docker/db-init.sql:/docker-entrypoint-initdb.d/db-init.sql:ro
@@ -18,15 +18,15 @@ services:
   api:
     build:
       context: ./backend
-    container_name: autocue-api
+    container_name: autoque-api
     restart: unless-stopped
     environment:
       PORT: 4000
       NODE_ENV: production
-      DATABASE_URL: postgres://autocue:autocue@db:5432/autocue
+      DATABASE_URL: postgres://autoque:autoque@db:5432/autoque
       JWT_SECRET: change_me
-      JWT_ISSUER: autocue
-      JWT_AUDIENCE: autocue-users
+      JWT_ISSUER: autoque
+      JWT_AUDIENCE: autoque-users
       OSC_IP: 127.0.0.1
       OSC_PORT: 3032
       OSC_RATE_MS: 100

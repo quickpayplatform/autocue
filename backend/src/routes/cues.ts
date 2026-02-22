@@ -12,7 +12,8 @@ import { Role } from "../types.js";
 const router = Router();
 const executor = new CueExecutor();
 
-const OPERATOR_ROLES: Role[] = ["OPERATOR", "ADMIN"];
+const OPERATOR_ROLES: Role[] = ["OPERATOR", "ADMIN", "THEATRE_ADMIN", "THEATRE_TECH"];
+const SUBMITTER_ROLES: Role[] = ["SUBMITTER", "CLIENT", "DESIGNER"];
 
 async function getVenueContext(userId: string, venueId: string) {
   const rows = await query<{
@@ -170,7 +171,7 @@ router.get("/:id", async (req, res) => {
     return;
   }
 
-  if (authedReq.user.role === "SUBMITTER" && cue.submitted_by !== authedReq.user.userId) {
+  if (SUBMITTER_ROLES.includes(authedReq.user.role) && cue.submitted_by !== authedReq.user.userId) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -206,7 +207,7 @@ router.get("/:id/logs", async (req, res) => {
     return;
   }
 
-  if (authedReq.user.role === "SUBMITTER" && cue.submitted_by !== authedReq.user.userId) {
+  if (SUBMITTER_ROLES.includes(authedReq.user.role) && cue.submitted_by !== authedReq.user.userId) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -255,7 +256,7 @@ router.patch("/:id", async (req: AuthedRequest, res) => {
     return;
   }
 
-  if (req.user.role === "SUBMITTER" && cue.submitted_by !== req.user.userId) {
+  if (SUBMITTER_ROLES.includes(req.user.role) && cue.submitted_by !== req.user.userId) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }

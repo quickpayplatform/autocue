@@ -1,14 +1,16 @@
 {
-  "name": "autocue-backend",
+  "name": "autoque-backend",
   "version": "1.0.0",
-  "description": "AutoCue backend API",
+  "description": "AutoQue backend API",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "seed:admin": "tsx src/scripts/seedAdmin.ts"
+    "seed:admin": "tsx src/scripts/seedAdmin.ts",
+    "seed:theatre": "tsx src/scripts/seedTheatre.ts",
+    "migrate": "tsx src/scripts/migrate.ts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
