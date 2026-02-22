@@ -145,6 +145,9 @@ router.get("/:id/detail", async (req: AuthedRequest, res) => {
     "SELECT id, fixture_type_id, position_id, label, quantity, orientation FROM fixture_instances WHERE rig_version_id = $1",
     [rig.id]
   );
+  const fixtureTypes = await query(
+    "SELECT id, manufacturer, model, category, capabilities FROM fixture_types"
+  );
   const groups = await query(
     "SELECT id, name FROM groups WHERE rig_version_id = $1",
     [rig.id]
@@ -166,6 +169,7 @@ router.get("/:id/detail", async (req: AuthedRequest, res) => {
     rig,
     positions,
     fixtures,
+    fixtureTypes,
     groups,
     groupFixtures,
     stageBackgrounds,

@@ -53,6 +53,12 @@ const cueEventSchema = z.object({
 const SESSION_EDITOR_ROLES: Role[] = ["CLIENT", "DESIGNER", "THEATRE_ADMIN", "THEATRE_TECH", "ADMIN"];
 
 const analysisSchema = z.object({
+  tempoBpm: z.number().min(40).max(220).optional(),
+  segments: z.array(z.object({
+    startMs: z.number().int().min(0),
+    endMs: z.number().int().min(0),
+    type: z.enum(["VERSE", "CHORUS", "BRIDGE", "INTRO", "OUTRO"])
+  })).default([]),
   markers: z.array(z.object({
     tMs: z.number().int().min(0),
     type: z.enum(["BEAT", "DROP", "CHORUS", "VERSE", "CUT", "MOTION_PEAK"]),
@@ -72,21 +78,35 @@ async function hasTheatreAccess(userId: string, theatreId: string): Promise<bool
   return rows.length > 0;
 }
 
-function generateCuesFromAnalysis(analysis: any, theme: any) {
+function generateCuesFromAnalysis(analysis: any, theme: any, groups: Array<{ id: string; name: string }>) {
   const markers = analysis?.markers ?? [];
   const energy = analysis?.energyCurve ?? [];
   const palette = theme?.palette ?? [];
   const constraints = theme?.constraints ?? {};
   const maxIntensity = typeof constraints.maxIntensity === "number" ? constraints.maxIntensity : 1;
 
+  const groupByName = groups.reduce<Record<string, string[]>>((acc, group) => {
+    const name = group.name.toLowerCase();
+    if (name.includes("front") || name.includes("wash")) acc.front = [...(acc.front ?? []), group.id];
+    if (name.includes("back")) acc.back = [...(acc.back ?? []), group.id];
+    if (name.includes("mover") || name.includes("move")) acc.mover = [...(acc.mover ?? []), group.id];
+    if (name.includes("fx") || name.includes("effect")) acc.fx = [...(acc.fx ?? []), group.id];
+    return acc;
+  }, {});
+
   return markers.map((marker: any, index: number) => {
     const energyPoint = energy.find((point: any) => point.tMs >= marker.tMs);
     const intensityBase = energyPoint ? energyPoint.value : 0.6;
     const intensity = Math.min(maxIntensity, Math.max(0.2, intensityBase));
+    const highEnergy = intensity > 0.7;
+    const targetGroups = highEnergy
+      ? [...(groupByName.mover ?? []), ...(groupByName.fx ?? []), ...(groupByName.back ?? [])]
+      : [...(groupByName.front ?? []), ...(groupByName.back ?? [])];
+
     return {
       tMs: marker.tMs,
       type: marker.type === "DROP" ? "HIT" : "LOOK",
-      targets: { groupIds: [], fixtureInstanceIds: [] },
+      targets: { groupIds: targetGroups, fixtureInstanceIds: [] },
       look: {
         intensity,
         paletteColorRef: palette.length > 0 ? index % palette.length : 0
@@ -245,7 +265,8 @@ router.post("/sessions/:id/generate", async (req: AuthedRequest, res) => {
     media_asset_id: string;
     theme: Record<string, unknown>;
     analysis: any;
-  }>("SELECT id, media_asset_id, theme, analysis FROM autoque_sessions WHERE id = $1", [req.params.id]);
+    rig_version_id: string;
+  }>("SELECT id, media_asset_id, theme, analysis, rig_version_id FROM autoque_sessions WHERE id = $1", [req.params.id]);
   const session = sessions[0];
   if (!session) {
     res.status(404).json({ error: "Session not found" });
@@ -254,7 +275,11 @@ router.post("/sessions/:id/generate", async (req: AuthedRequest, res) => {
 
   await query("DELETE FROM cue_events WHERE session_id = $1", [session.id]);
 
-  const generated = generateCuesFromAnalysis(session.analysis, session.theme);
+  const groups = await query<{ id: string; name: string }>(
+    "SELECT id, name FROM groups WHERE rig_version_id = $1",
+    [session.rig_version_id]
+  );
+  const generated = generateCuesFromAnalysis(session.analysis, session.theme, groups);
   for (let i = 0; i < generated.length; i += 1) {
     const marker = generated[i];
     await query(

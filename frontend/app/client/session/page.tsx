@@ -22,7 +22,8 @@ interface CueEvent {
 
 interface RigDetail {
   stageBackgrounds: Array<{ image_url: string; calibration: any; width_px: number; height_px: number }>;
-  fixtures: Array<{ id: string; label: string }>;
+  fixtures: Array<{ id: string; label: string; fixture_type_id: string }>;
+  fixtureTypes: Array<{ id: string; capabilities: any }>;
   placements: Array<{ fixture_instance_id: string; stage_x: number; stage_y: number }>;
 }
 
@@ -184,7 +185,10 @@ export default function AutoQueSessionPage() {
       }
     }
 
-    return { markers, energyCurve };
+    const tempoBpm = estimateTempo(energyCurve);
+    const segments = segmentAudio(energyCurve);
+
+    return { markers, energyCurve, tempoBpm, segments };
   }
 
   async function analyzeVideoMotion(file: File) {
@@ -237,7 +241,9 @@ export default function AutoQueSessionPage() {
     }
 
     URL.revokeObjectURL(videoUrl);
-    return { markers, energyCurve };
+    const tempoBpm = estimateTempo(energyCurve);
+    const segments = segmentAudio(energyCurve);
+    return { markers, energyCurve, tempoBpm, segments };
   }
 
   async function runAnalysis() {
@@ -251,6 +257,27 @@ export default function AutoQueSessionPage() {
       body: JSON.stringify(analysis)
     }, token);
     setAnalysisStatus(`Analysis complete (${analysis.markers.length} markers)`);
+  }
+
+  function estimateTempo(energyCurve: Array<{ tMs: number; value: number }>) {
+    if (energyCurve.length < 4) return 120;
+    const peaks = energyCurve.filter((point) => point.value > 0.5).map((point) => point.tMs);
+    if (peaks.length < 2) return 120;
+    const intervals = peaks.slice(1).map((t, idx) => t - peaks[idx]);
+    const avgMs = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    return Math.round(60000 / Math.max(1, avgMs));
+  }
+
+  function segmentAudio(energyCurve: Array<{ tMs: number; value: number }>) {
+    const segments = [];
+    const window = 8;
+    for (let i = 0; i < energyCurve.length - window; i += window) {
+      const slice = energyCurve.slice(i, i + window);
+      const avg = slice.reduce((sum, p) => sum + p.value, 0) / slice.length;
+      const type = avg > 0.6 ? "CHORUS" : "VERSE";
+      segments.push({ startMs: slice[0].tMs, endMs: slice[slice.length - 1].tMs, type });
+    }
+    return segments;
   }
 
   function getActiveCue(timeMs: number) {
@@ -278,6 +305,11 @@ export default function AutoQueSessionPage() {
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
       const activeCue = getActiveCue(playheadMs);
+      const fixtureTypeMap = new Map(
+        rigDetail.fixtureTypes.map((fixture) => [fixture.id, fixture.capabilities?.defaultBeamAngle ?? 30])
+      );
+      const fixtureMap = new Map(rigDetail.fixtures.map((fixture) => [fixture.id, fixture.fixture_type_id]));
+
       rigDetail.placements.forEach((placement) => {
         const x = placement.stage_x * canvas.width;
         const y = placement.stage_y * canvas.height;
@@ -287,11 +319,15 @@ export default function AutoQueSessionPage() {
         ctx.fill();
 
         if (activeCue) {
+          const fixtureTypeId = fixtureMap.get(placement.fixture_instance_id);
+          const beamAngle = fixtureTypeId ? fixtureTypeMap.get(fixtureTypeId) ?? 30 : 30;
+          const length = 120;
+          const halfWidth = Math.tan((beamAngle * Math.PI) / 360) * length;
           ctx.fillStyle = "rgba(214, 164, 105, 0.3)";
           ctx.beginPath();
           ctx.moveTo(x, y);
-          ctx.lineTo(x - 30, y + 80);
-          ctx.lineTo(x + 30, y + 80);
+          ctx.lineTo(x - halfWidth, y + length);
+          ctx.lineTo(x + halfWidth, y + length);
           ctx.closePath();
           ctx.fill();
         }
